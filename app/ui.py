@@ -364,31 +364,34 @@ def render_ui():
                         st.metric("Minimum Required Rate", "Not reached")
 
                     fig, ax = plt.subplots(figsize=(8, 4.5))
+                    
                     ax.plot(
                         settle["flow_rates"],
                         settle["ann_velocity"],
-                        marker="o",
                         color="#1f77b4",
+                        linewidth=2.5,
                         label="Annular Velocity",
                     )
+                    
                     ax.plot(
                         settle["flow_rates"],
                         settle["required_velocity"],
                         linestyle="--",
                         color="#ff7f0e",
+                        linewidth=2.5,
                         label="Required Velocity",
                     )
-
+                    
                     if settle["min_rate"] is not None:
                         ax.scatter(
                             settle["min_rate"],
                             settle["req_velocity"],
-                            s=110,
-                            color="#2ca02c",
+                            s=130,
+                            color="#d62728",
                             edgecolor="black",
-                            label=f"Min Rate: {settle['min_rate']:.1f} bpm",
+                            zorder=5,
+                            label=f"Minimum Rate: {settle['min_rate']:.2f} bpm",
                         )
-
                     ax.set_xlabel("Flow Rate (bpm)")
                     ax.set_ylabel("Velocity (ft/min)")
                     ax.grid(True)

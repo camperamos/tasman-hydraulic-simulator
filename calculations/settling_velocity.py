@@ -42,7 +42,6 @@ def settling_velocity_analysis(
     rho_p = solid["density_gcc"] * 62.42796
 
     Vs0 = g * (rho_p - rho_f) * d_ft**2 / (18 * mu)
-
     Re = (rho_f * Vs0 * d_ft) / mu if mu > 0 else 0
 
     if Re < 1000 and Re > 0:
@@ -56,7 +55,6 @@ def settling_velocity_analysis(
     Vreq = ratio * Vset
 
     flow_rates = np.arange(0, max_flow_bpm, step)
-
     if len(flow_rates) == 0 or abs(flow_rates[-1] - max_flow_bpm) > 1e-6:
         flow_rates = np.append(flow_rates, max_flow_bpm)
 
@@ -67,11 +65,11 @@ def settling_velocity_analysis(
 
     required_velocity = [Vreq] * len(flow_rates)
 
-    min_rate = None
-    for q, v in zip(flow_rates, ann_velocity):
-        if v >= Vreq:
-            min_rate = q
-            break
+    # Exact intersection, not next table value
+    min_rate_exact = Vreq * (ann_area_in2 / 144.0) / 5.6146
+
+    if min_rate_exact > max_flow_bpm:
+        min_rate_exact = None
 
     return {
         "flow_rates": flow_rates,
@@ -80,7 +78,7 @@ def settling_velocity_analysis(
         "settling_velocity": Vset,
         "ratio": ratio,
         "req_velocity": Vreq,
-        "min_rate": min_rate,
+        "min_rate": min_rate_exact,
         "solid_properties": {
             "Solid Type": solid_type,
             "Particle Size (in)": solid["size_in"],

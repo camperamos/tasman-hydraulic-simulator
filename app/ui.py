@@ -115,9 +115,10 @@ def store_payload(payload, well_name, target_depth, calculation):
         "target_depth": target_depth,
         "calculation": calculation,
     }
+    st.session_state["pdf_bytes"] = None
 
 
-def make_pdf_button(calculation):
+def make_pdf_download_button(calculation):
     payload = st.session_state.get("last_payload")
     job_info = st.session_state.get("last_job_info")
 
@@ -127,7 +128,7 @@ def make_pdf_button(calculation):
     if job_info.get("calculation") != calculation:
         return
 
-    if st.button("Generate PDF"):
+    if st.button("Prepare PDF"):
         pdf_path = "reports/Final_Report.pdf"
 
         generate_pdf_report(
@@ -139,7 +140,18 @@ def make_pdf_button(calculation):
             solid_table=payload.get("solid_table"),
         )
 
-        st.success(f"PDF generated ✅ {pdf_path}")
+        with open(pdf_path, "rb") as f:
+            st.session_state["pdf_bytes"] = f.read()
+
+        st.success("PDF ready for download.")
+
+    if st.session_state.get("pdf_bytes") is not None:
+        st.download_button(
+            label="Download PDF",
+            data=st.session_state["pdf_bytes"],
+            file_name="Tasman_Hydraulic_Report.pdf",
+            mime="application/pdf",
+        )
 
 
 def render_ui():
@@ -151,6 +163,9 @@ def render_ui():
 
     if "last_job_info" not in st.session_state:
         st.session_state["last_job_info"] = None
+
+    if "pdf_bytes" not in st.session_state:
+        st.session_state["pdf_bytes"] = None
 
     st.title("Pressure & Hydraulics Simulator")
 
@@ -218,14 +233,15 @@ def render_ui():
                     ax.plot(
                         ann["flow_rates"],
                         ann["ann_velocities"],
-                        marker="o",
                         color="#1f77b4",
+                        linewidth=2.5,
                         label="Annular Velocity",
                     )
                     ax.axhline(
                         120,
                         linestyle="--",
                         color="#d62728",
+                        linewidth=2.5,
                         label="Minimum Recommended Velocity",
                     )
                     ax.set_xlabel("Flow Rate (bpm)")
@@ -358,13 +374,13 @@ def render_ui():
                     if settle["min_rate"] is not None:
                         st.metric(
                             "Minimum Required Rate",
-                            f"{settle['min_rate']:.1f} bpm",
+                            f"{settle['min_rate']:.2f} bpm",
                         )
                     else:
                         st.metric("Minimum Required Rate", "Not reached")
 
                     fig, ax = plt.subplots(figsize=(8, 4.5))
-                    
+
                     ax.plot(
                         settle["flow_rates"],
                         settle["ann_velocity"],
@@ -372,7 +388,7 @@ def render_ui():
                         linewidth=2.5,
                         label="Annular Velocity",
                     )
-                    
+
                     ax.plot(
                         settle["flow_rates"],
                         settle["required_velocity"],
@@ -381,7 +397,7 @@ def render_ui():
                         linewidth=2.5,
                         label="Required Velocity",
                     )
-                    
+
                     if settle["min_rate"] is not None:
                         ax.scatter(
                             settle["min_rate"],
@@ -392,6 +408,7 @@ def render_ui():
                             zorder=5,
                             label=f"Minimum Rate: {settle['min_rate']:.2f} bpm",
                         )
+
                     ax.set_xlabel("Flow Rate (bpm)")
                     ax.set_ylabel("Velocity (ft/min)")
                     ax.grid(True)
@@ -486,8 +503,8 @@ def render_ui():
                     ax.plot(
                         fric["flow_rates"],
                         fric["dp_total"],
-                        marker="o",
                         color="#9467bd",
+                        linewidth=2.5,
                         label="Total Friction Pressure Drop",
                     )
                     ax.set_xlabel("Flow Rate (bpm)")
@@ -606,8 +623,8 @@ def render_ui():
                         ax.plot(
                             noz["flow_rates"],
                             noz["pressure_drops"],
-                            marker="o",
                             color="#d62728",
+                            linewidth=2.5,
                             label="Nozzle Pressure Drop",
                         )
                         ax.set_xlabel("Flow Rate (bpm)")
@@ -630,4 +647,4 @@ def render_ui():
                 except Exception as e:
                     st.error(f"Calculation error: {e}")
 
-    make_pdf_button(calculation)
+    make_pdf_download_button(calculation)

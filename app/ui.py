@@ -28,10 +28,10 @@ TUBULAR_TABLES = {
 
 
 MODULE_DESCRIPTIONS = {
-    "Annular Velocity": "Calculates annular velocity vs flow rate and checks against the minimum recommended cleaning velocity.",
-    "Settling Velocity (Hole Cleaning)": "Estimates particle settling velocity and the required annular velocity for effective hole cleaning.",
-    "Friction Pressure Drop": "Calculates friction pressure losses through the selected tubular across a flow-rate range.",
-    "Nozzle Pressure Drop": "Calculates pressure drop and exit velocity through one or more nozzle configurations.",
+    "Annular Velocity": "Evaluates annular fluid velocity versus flow rate to support solids transport screening.",
+    "Settling Velocity (Hole Cleaning)": "Estimates particle settling velocity and required annular velocity for effective hole cleaning.",
+    "Friction Pressure Drop": "Estimates friction pressure losses through the selected tubular across a flow-rate range.",
+    "Nozzle Pressure Drop": "Calculates nozzle pressure drop and exit velocity based on the selected nozzle configuration.",
 }
 
 
@@ -151,7 +151,7 @@ def make_pdf_download_button(calculation):
     if job_info.get("calculation") != calculation:
         return
 
-    if st.button("Prepare PDF"):
+    if st.button("Prepare Technical Report"):
         pdf_path = "reports/Final_Report.pdf"
 
         generate_pdf_report(
@@ -167,11 +167,11 @@ def make_pdf_download_button(calculation):
         with open(pdf_path, "rb") as f:
             st.session_state["pdf_bytes"] = f.read()
 
-        st.success("PDF ready for download.")
+        st.success("Technical report ready for download.")
 
     if st.session_state.get("pdf_bytes") is not None:
         st.download_button(
-            label="Download PDF",
+            label="Download Technical Report",
             data=st.session_state["pdf_bytes"],
             file_name="Tasman_Hydraulic_Report.pdf",
             mime="application/pdf",
@@ -194,10 +194,17 @@ def render_ui():
     logo_path = os.path.join("assets", "tasman_logo.png")
 
     if os.path.exists(logo_path):
-        st.image(logo_path, width=420)
+        st.image(logo_path, width=300)
 
-    st.title("Tasman Hydraulic Simulator")
-    st.caption("Engineering screening tool for hydraulic calculations, hole cleaning and pressure-loss evaluation.")
+    st.markdown(
+        "<h2 style='color:#008FE3; margin-bottom:0;'>Hydraulic & Well Intervention Simulator</h2>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "<p style='color:gray; margin-top:0;'>Tasman Oil Tools | Rentals - Services - Solutions</p>",
+        unsafe_allow_html=True,
+    )
 
     c1, c2 = st.columns(2)
     well_name = c1.text_input("Well Name")
@@ -205,8 +212,11 @@ def render_ui():
 
     st.markdown("---")
 
-    st.markdown("## Select Calculation")
-    st.caption("Select the type of hydraulic calculation you want to perform.")
+    st.markdown(
+        "<h3 style='color:#F28C00; margin-bottom:0;'>Select Calculation</h3>",
+        unsafe_allow_html=True,
+    )
+    st.caption("Select the hydraulic calculation module you want to run.")
 
     calculation = st.radio(
         label="Calculation module",
@@ -239,7 +249,7 @@ def render_ui():
 
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
-        if st.button("Run Calculation"):
+        if st.button("Run Simulation"):
             missing = validate_required(
                 {
                     "Pipe 1 OD": pipe1_od,
@@ -346,7 +356,7 @@ def render_ui():
         solid = st.selectbox("Solid Type", list(SOLIDS_TABLE.keys()), index=None)
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
-        if st.button("Run Calculation"):
+        if st.button("Run Simulation"):
             missing = validate_required(
                 {
                     "Pipe 1 OD": pipe1_od,
@@ -538,7 +548,7 @@ def render_ui():
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
-        if st.button("Run Calculation"):
+        if st.button("Run Simulation"):
             missing = validate_required(
                 {
                     "Tubing Type": pipe_type,
@@ -669,7 +679,7 @@ def render_ui():
                 format="%.3f",
             )
 
-        if st.button("Run Calculation"):
+        if st.button("Run Simulation"):
             missing = validate_required(
                 {
                     "Max Flow Rate": flow_rate,

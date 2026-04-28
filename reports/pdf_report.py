@@ -44,6 +44,10 @@ def build_table(data, header=True, col_widths=None):
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
 
     if header:
@@ -87,6 +91,17 @@ def generate_pdf_report(
             fontSize=18,
             textColor=TASMAN_BLUE,
             alignment=1,
+            spaceAfter=8,
+        )
+    )
+
+    styles.add(
+        ParagraphStyle(
+            name="ReportSubtitle",
+            parent=styles["Normal"],
+            fontSize=9,
+            textColor=colors.grey,
+            alignment=1,
             spaceAfter=10,
         )
     )
@@ -118,17 +133,16 @@ def generate_pdf_report(
     logo_path = os.path.join("assets", "tasman_logo.png")
 
     if os.path.exists(logo_path):
-        story.append(Image(logo_path, width=3.8 * inch, height=1.1 * inch))
-        story.append(Spacer(1, 8))
+        story.append(Image(logo_path, width=3.6 * inch, height=1.0 * inch))
+        story.append(Spacer(1, 6))
 
     story.append(Paragraph("Hydraulic Calculation Report", styles["TasmanTitle"]))
     story.append(
         Paragraph(
             "Tasman Oil Tools | Rentals - Services - Solutions",
-            styles["SmallText"],
+            styles["ReportSubtitle"],
         )
     )
-    story.append(Spacer(1, 14))
 
     header_data = [
         ["Well Name", job_info.get("well_name") or "-"],
@@ -150,17 +164,22 @@ def generate_pdf_report(
     story.append(header)
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph("1. Calculation Inputs", styles["SectionTitle"]))
+    story.append(Paragraph("1. Input Parameters", styles["SectionTitle"]))
 
     if inputs_table is not None:
         input_data = [inputs_table.columns.tolist()] + inputs_table.values.tolist()
-        story.append(build_table(input_data))
+        story.append(build_table(input_data, header=True, col_widths=[245, 245]))
     else:
         story.append(Paragraph("No input table available.", styles["Normal"]))
 
     story.append(Spacer(1, 10))
 
+    section_number = 2
+
     if warning:
+        story.append(Paragraph(f"{section_number}. Operational Warning", styles["SectionTitle"]))
+        section_number += 1
+
         warning_table = Table([[warning]], colWidths=[490])
         warning_table.setStyle(
             TableStyle(
@@ -170,20 +189,24 @@ def generate_pdf_report(
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ]
             )
         )
-        story.append(Paragraph("2. Operational Warning", styles["SectionTitle"]))
+
         story.append(warning_table)
         story.append(Spacer(1, 10))
 
     if solid_table is not None:
-        story.append(Paragraph("3. Solid Properties", styles["SectionTitle"]))
+        story.append(Paragraph(f"{section_number}. Solid Properties", styles["SectionTitle"]))
+        section_number += 1
+
         solid_data = [solid_table.columns.tolist()] + solid_table.values.tolist()
-        story.append(build_table(solid_data))
+        story.append(build_table(solid_data, header=True, col_widths=[245, 245]))
         story.append(Spacer(1, 10))
 
-    story.append(Paragraph("4. Results Table", styles["SectionTitle"]))
+    story.append(Paragraph(f"{section_number}. Results Table", styles["SectionTitle"]))
+    section_number += 1
 
     result_data = [table.columns.tolist()]
 
@@ -193,20 +216,22 @@ def generate_pdf_report(
             formatted_row.append(fmt(val, is_flow=("Flow" in col or "Rate" in col)))
         result_data.append(formatted_row)
 
-    story.append(build_table(result_data))
+    story.append(build_table(result_data, header=True))
     story.append(Spacer(1, 12))
 
     if chart and os.path.exists(chart):
-        story.append(Paragraph("5. Results Chart", styles["SectionTitle"]))
+        story.append(Paragraph(f"{section_number}. Results Chart", styles["SectionTitle"]))
         story.append(Image(chart, width=460, height=275))
 
     story.append(Spacer(1, 14))
-    story.append(
-        Paragraph(
-            "This report was generated using Tasman Oil Tools Hydraulic Simulator. "
-            "Results are intended for engineering screening and operational support.",
-            styles["SmallText"],
-        )
+
+    disclaimer = (
+        "This report was generated using Tasman Oil Tools Hydraulic Simulator. "
+        "Results are intended for engineering screening and operational support. "
+        "Final operational decisions should consider field conditions, equipment limits, "
+        "well geometry, and company procedures."
     )
+
+    story.append(Paragraph(disclaimer, styles["SmallText"]))
 
     doc.build(story)

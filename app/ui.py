@@ -339,6 +339,9 @@ def render_ui():
     # =====================================================
     # 2. SETTLING VELOCITY / HOLE CLEANING
     # =====================================================
+        # =====================================================
+    # 2. SETTLING VELOCITY / HOLE CLEANING
+    # =====================================================
     elif calculation == "Settling Velocity (Hole Cleaning)":
         st.markdown("### Settling Velocity / Hole Cleaning")
 
@@ -350,17 +353,38 @@ def render_ui():
         with p2:
             pipe2_type, pipe2_od_label, pipe2_wt, pipe2_od, pipe2_id = pipe_selector("Pipe 2")
 
+        pipe1_total_length = None
+        if pipe1_type == "CT":
+            pipe1_total_length = st.number_input(
+                "Total CT Length (m)",
+                value=None,
+                min_value=0.0,
+                help="Total CT length available on reel/string. Used to estimate friction pressure drop through the smaller pipe."
+            )
+        else:
+            pipe1_total_length = target_depth
+
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
         deviation = st.number_input("Max Well Deviation (deg)", value=None, min_value=0.0)
         solid = st.selectbox("Solid Type", list(SOLIDS_TABLE.keys()), index=None)
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
+        pressure_limit = st.number_input(
+            "Max Allowable Friction Pressure Drop (psi) - Optional",
+            value=None,
+            min_value=0.0,
+            help="Optional limit to flag if friction pressure drop through the smaller pipe becomes excessive."
+        )
+
         if st.button("Run Simulation"):
             missing = validate_required(
                 {
+                    "Target Depth": target_depth,
                     "Pipe 1 OD": pipe1_od,
+                    "Pipe 1 ID": pipe1_id,
                     "Pipe 2 ID": pipe2_id,
+                    "Pipe 1 Total Length": pipe1_total_length,
                     "Fluid Density": density,
                     "Fluid Viscosity": viscosity,
                     "Max Well Deviation": deviation,
@@ -389,6 +413,16 @@ def render_ui():
                         deviation_deg=deviation,
                     )
 
+                    friction = friction_analysis(
+                        tubing_type=pipe1_type,
+                        inner_diameter_in=pipe1_id,
+                        target_depth_m=target_depth,
+                        total_ct_length_m=pipe1_total_length,
+                        density_ppg=density,
+                        viscosity_cp=viscosity,
+                        max_flow_bpm=max_flow,
+                    )
+
                     results_df = pd.DataFrame(
                         {
                             "Flow Rate (bpm)": [
@@ -399,6 +433,9 @@ def render_ui():
                             ],
                             "Required Velocity (ft/min)": [
                                 fmt_int(v) for v in settle["required_velocity"]
+                            ],
+                            "Friction ΔP - Pipe 1 (psi)": [
+                                fmt_int(v) for v in friction["dp_total"]
                             ],
                         }
                     )
@@ -424,7 +461,8 @@ def render_ui():
                     st.markdown("### Solid Properties")
                     st.dataframe(solid_table, use_container_width=True)
 
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3, c4 = st.columns(4)
+
                     c1.metric(
                         "Settling Velocity",
                         f"{settle['settling_velocity']:.0f} ft/min",
@@ -436,12 +474,19 @@ def render_ui():
                     )
 
                     if settle["min_rate"] is not None:
-                        st.metric(
+                        c4.metric(
                             "Minimum Required Rate",
                             f"{settle['min_rate']:.2f} bpm",
                         )
                     else:
-                        st.metric("Minimum Required Rate", "Not reached")
+                        c4.metric("Minimum Required Rate", "Not reached")
+
+                    max_friction_dp = max(friction["dp_total"]) if friction["dp_total"] else 0
+
+                    st.metric(
+                        "Max Friction ΔP Through Pipe 1",
+                        f"{max_friction_dp:,.0f} psi",
+                    )
 
                     fig, ax = plt.subplots(figsize=(8, 4.5))
 
@@ -481,12 +526,51 @@ def render_ui():
                     chart_path = save_chart(fig, "settling.png")
                     st.pyplot(fig)
 
-                    warning = None
-                    if settle["min_rate"] is None or max_flow < settle["min_rate"]:
-                        warning = (
-                            "Required annular velocity was not reached. "
-                            "Higher pump capacity may be required."
+                    st.markdown("### Friction Pressure Drop Through Pipe 1")
+
+                    fig2, ax2 = plt.subplots(figsize=(8, 4.5))
+
+                    ax2.plot(
+                        friction["flow_rates"],
+                        friction["dp_total"],
+                        color="#6A3D9A",
+                        linewidth=2.5,
+                        label="Friction ΔP - Pipe 1",
+                    )
+
+                    if pressure_limit is not None:
+                        ax2.axhline(
+                            pressure_limit,
+                            color="#D62728",
+                            linestyle="--",
+                            linewidth=2.5,
+                            label=f"Pressure Limit: {pressure_limit:,.0f} psi",
                         )
+
+                    ax2.set_xlabel("Flow Rate (bpm)")
+                    ax2.set_ylabel("Pressure Drop (psi)")
+                    ax2.grid(True)
+                    ax2.legend()
+
+                    friction_chart_path = save_chart(fig2, "settling_friction.png")
+                    st.pyplot(fig2)
+
+                    warnings = []
+
+                    if settle["min_rate"] is None or max_flow < settle["min_rate"]:
+                        warnings.append(
+                            "Required annular velocity was not reached. Higher pump capacity may be required."
+                        )
+
+                    if pressure_limit is not None and max_friction_dp > pressure_limit:
+                        warnings.append(
+                            "Friction pressure drop through Pipe 1 exceeds the defined allowable limit. "
+                            "The required flow rate may not be operationally feasible."
+                        )
+
+                    warning = " ".join(warnings) if warnings else None
+
+                    if warning:
                         st.warning(warning)
 
                     inputs_table = make_inputs_table(
@@ -498,6 +582,8 @@ def render_ui():
                             "Pipe 1 OD": pipe1_od_label,
                             "Pipe 1 WT / Weight": pipe1_wt,
                             "Pipe 1 OD Numeric (in)": pipe1_od,
+                            "Pipe 1 ID (in)": pipe1_id,
+                            "Pipe 1 Total Length (m)": pipe1_total_length,
                             "Pipe 2 Type": pipe2_type,
                             "Pipe 2 OD": pipe2_od_label,
                             "Pipe 2 WT / Weight": pipe2_wt,
@@ -510,6 +596,8 @@ def render_ui():
                             "Particle Size (in)": solid_props["Particle Size (in)"],
                             "Particle Density (g/cc)": solid_props["Particle Density (g/cc)"],
                             "Max Flow Rate (bpm)": max_flow,
+                            "Max Allowable Friction ΔP (psi)": pressure_limit,
+                            "Max Calculated Friction ΔP (psi)": round(max_friction_dp, 0),
                         }
                     )
 

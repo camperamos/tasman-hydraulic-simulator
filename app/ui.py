@@ -27,6 +27,14 @@ TUBULAR_TABLES = {
 }
 
 
+MODULE_DESCRIPTIONS = {
+    "Annular Velocity": "Calculates annular velocity vs flow rate and checks against the minimum recommended cleaning velocity.",
+    "Settling Velocity (Hole Cleaning)": "Estimates particle settling velocity and the required annular velocity for effective hole cleaning.",
+    "Friction Pressure Drop": "Calculates friction pressure losses through the selected tubular across a flow-rate range.",
+    "Nozzle Pressure Drop": "Calculates pressure drop and exit velocity through one or more nozzle configurations.",
+}
+
+
 def parse_od(od_value):
     try:
         return float(od_value)
@@ -51,12 +59,27 @@ def fmt_flow(val):
         return "-"
 
 
+def fmt_value(value):
+    if value is None or value == "":
+        return "-"
+    return value
+
+
 def validate_required(values):
     missing = []
     for label, value in values.items():
         if value is None or value == "":
             missing.append(label)
     return missing
+
+
+def make_inputs_table(inputs_dict):
+    return pd.DataFrame(
+        {
+            "Input": list(inputs_dict.keys()),
+            "Value": [fmt_value(v) for v in inputs_dict.values()],
+        }
+    )
 
 
 def pipe_selector(prefix):
@@ -68,7 +91,7 @@ def pipe_selector(prefix):
     )
 
     if not pipe_type:
-        return None, None, None, None
+        return None, None, None, None, None
 
     df = TUBULAR_TABLES[pipe_type]
 
@@ -80,7 +103,7 @@ def pipe_selector(prefix):
     )
 
     if od is None:
-        return pipe_type, None, None, None
+        return pipe_type, None, None, None, None
 
     wt_options = df[df["OD"] == od]["WT"].unique()
 
@@ -92,12 +115,12 @@ def pipe_selector(prefix):
     )
 
     if wt is None:
-        return pipe_type, od, None, None
+        return pipe_type, od, None, None, None
 
     inner_id = get_id(df, od, wt)
     od_numeric = parse_od(od)
 
-    return pipe_type, od_numeric, wt, inner_id
+    return pipe_type, od, wt, od_numeric, inner_id
 
 
 def save_chart(fig, filename):
@@ -138,6 +161,7 @@ def make_pdf_download_button(calculation):
             chart=payload["chart"],
             warning=payload.get("warning"),
             solid_table=payload.get("solid_table"),
+            inputs_table=payload.get("inputs_table"),
         )
 
         with open(pdf_path, "rb") as f:
@@ -155,7 +179,7 @@ def make_pdf_download_button(calculation):
 
 
 def render_ui():
-    st.set_page_config(page_title="Pressure & Hydraulics Simulator", layout="wide")
+    st.set_page_config(page_title="Tasman Hydraulic Simulator", layout="wide")
     os.makedirs("reports", exist_ok=True)
 
     if "last_payload" not in st.session_state:
@@ -167,7 +191,13 @@ def render_ui():
     if "pdf_bytes" not in st.session_state:
         st.session_state["pdf_bytes"] = None
 
-    st.title("Pressure & Hydraulics Simulator")
+    logo_path = os.path.join("assets", "tasman_logo.png")
+
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=420)
+
+    st.title("Tasman Hydraulic Simulator")
+    st.caption("Engineering screening tool for hydraulic calculations, hole cleaning and pressure-loss evaluation.")
 
     c1, c2 = st.columns(2)
     well_name = c1.text_input("Well Name")
@@ -175,15 +205,21 @@ def render_ui():
 
     st.markdown("---")
 
+    st.markdown("## Select Calculation")
+    st.caption("Select the type of hydraulic calculation you want to perform.")
+
     calculation = st.radio(
-        "Select calculation",
-        [
+        label="Calculation module",
+        options=[
             "Annular Velocity",
             "Settling Velocity (Hole Cleaning)",
             "Friction Pressure Drop",
             "Nozzle Pressure Drop",
         ],
+        label_visibility="collapsed",
     )
+
+    st.info(MODULE_DESCRIPTIONS[calculation])
 
     st.markdown("---")
 
@@ -196,10 +232,10 @@ def render_ui():
         p1, p2 = st.columns(2)
 
         with p1:
-            pipe1_type, pipe1_od, pipe1_wt, pipe1_id = pipe_selector("Pipe 1")
+            pipe1_type, pipe1_od_label, pipe1_wt, pipe1_od, pipe1_id = pipe_selector("Pipe 1")
 
         with p2:
-            pipe2_type, pipe2_od, pipe2_wt, pipe2_id = pipe_selector("Pipe 2")
+            pipe2_type, pipe2_od_label, pipe2_wt, pipe2_od, pipe2_id = pipe_selector("Pipe 2")
 
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
@@ -233,14 +269,14 @@ def render_ui():
                     ax.plot(
                         ann["flow_rates"],
                         ann["ann_velocities"],
-                        color="#1f77b4",
+                        color="#008FE3",
                         linewidth=2.5,
                         label="Annular Velocity",
                     )
                     ax.axhline(
                         120,
                         linestyle="--",
-                        color="#d62728",
+                        color="#F28C00",
                         linewidth=2.5,
                         label="Minimum Recommended Velocity",
                     )
@@ -260,11 +296,29 @@ def render_ui():
                         )
                         st.warning(warning)
 
+                    inputs_table = make_inputs_table(
+                        {
+                            "Well Name": well_name,
+                            "Target Depth (m)": target_depth,
+                            "Calculation": calculation,
+                            "Pipe 1 Type": pipe1_type,
+                            "Pipe 1 OD": pipe1_od_label,
+                            "Pipe 1 WT / Weight": pipe1_wt,
+                            "Pipe 1 OD Numeric (in)": pipe1_od,
+                            "Pipe 2 Type": pipe2_type,
+                            "Pipe 2 OD": pipe2_od_label,
+                            "Pipe 2 WT / Weight": pipe2_wt,
+                            "Pipe 2 ID (in)": pipe2_id,
+                            "Max Flow Rate (bpm)": max_flow,
+                        }
+                    )
+
                     payload = {
                         "table": results_df,
                         "chart": chart_path,
                         "warning": warning,
                         "solid_table": None,
+                        "inputs_table": inputs_table,
                     }
 
                     store_payload(payload, well_name, target_depth, calculation)
@@ -281,10 +335,10 @@ def render_ui():
         p1, p2 = st.columns(2)
 
         with p1:
-            pipe1_type, pipe1_od, pipe1_wt, pipe1_id = pipe_selector("Pipe 1")
+            pipe1_type, pipe1_od_label, pipe1_wt, pipe1_od, pipe1_id = pipe_selector("Pipe 1")
 
         with p2:
-            pipe2_type, pipe2_od, pipe2_wt, pipe2_id = pipe_selector("Pipe 2")
+            pipe2_type, pipe2_od_label, pipe2_wt, pipe2_od, pipe2_id = pipe_selector("Pipe 2")
 
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
@@ -384,7 +438,7 @@ def render_ui():
                     ax.plot(
                         settle["flow_rates"],
                         settle["ann_velocity"],
-                        color="#1f77b4",
+                        color="#008FE3",
                         linewidth=2.5,
                         label="Annular Velocity",
                     )
@@ -393,7 +447,7 @@ def render_ui():
                         settle["flow_rates"],
                         settle["required_velocity"],
                         linestyle="--",
-                        color="#ff7f0e",
+                        color="#F28C00",
                         linewidth=2.5,
                         label="Required Velocity",
                     )
@@ -403,7 +457,7 @@ def render_ui():
                             settle["min_rate"],
                             settle["req_velocity"],
                             s=130,
-                            color="#d62728",
+                            color="#D62728",
                             edgecolor="black",
                             zorder=5,
                             label=f"Minimum Rate: {settle['min_rate']:.2f} bpm",
@@ -425,11 +479,36 @@ def render_ui():
                         )
                         st.warning(warning)
 
+                    inputs_table = make_inputs_table(
+                        {
+                            "Well Name": well_name,
+                            "Target Depth (m)": target_depth,
+                            "Calculation": calculation,
+                            "Pipe 1 Type": pipe1_type,
+                            "Pipe 1 OD": pipe1_od_label,
+                            "Pipe 1 WT / Weight": pipe1_wt,
+                            "Pipe 1 OD Numeric (in)": pipe1_od,
+                            "Pipe 2 Type": pipe2_type,
+                            "Pipe 2 OD": pipe2_od_label,
+                            "Pipe 2 WT / Weight": pipe2_wt,
+                            "Pipe 2 ID (in)": pipe2_id,
+                            "Annular Area (in²)": round(ann_area, 4),
+                            "Fluid Density (ppg)": density,
+                            "Fluid Viscosity (cP)": viscosity,
+                            "Max Well Deviation (deg)": deviation,
+                            "Solid Type": solid,
+                            "Particle Size (in)": solid_props["Particle Size (in)"],
+                            "Particle Density (g/cc)": solid_props["Particle Density (g/cc)"],
+                            "Max Flow Rate (bpm)": max_flow,
+                        }
+                    )
+
                     payload = {
                         "table": results_df,
                         "chart": chart_path,
                         "warning": warning,
                         "solid_table": solid_table,
+                        "inputs_table": inputs_table,
                     }
 
                     store_payload(payload, well_name, target_depth, calculation)
@@ -443,7 +522,7 @@ def render_ui():
     elif calculation == "Friction Pressure Drop":
         st.markdown("### Friction Pressure Drop")
 
-        pipe_type, pipe_od, pipe_wt, pipe_id = pipe_selector("Tubing")
+        pipe_type, pipe_od_label, pipe_wt, pipe_od, pipe_id = pipe_selector("Tubing")
 
         total_ct_length = None
         if pipe_type == "CT":
@@ -503,7 +582,7 @@ def render_ui():
                     ax.plot(
                         fric["flow_rates"],
                         fric["dp_total"],
-                        color="#9467bd",
+                        color="#6A3D9A",
                         linewidth=2.5,
                         label="Total Friction Pressure Drop",
                     )
@@ -515,11 +594,28 @@ def render_ui():
                     chart_path = save_chart(fig, "friction.png")
                     st.pyplot(fig)
 
+                    inputs_table = make_inputs_table(
+                        {
+                            "Well Name": well_name,
+                            "Target Depth (m)": target_depth,
+                            "Calculation": calculation,
+                            "Tubing Type": pipe_type,
+                            "Tubing OD": pipe_od_label,
+                            "Tubing WT / Weight": pipe_wt,
+                            "Tubing ID (in)": pipe_id,
+                            "Total CT Length (m)": total_ct_length,
+                            "Fluid Density (ppg)": density,
+                            "Fluid Viscosity (cP)": viscosity,
+                            "Max Flow Rate (bpm)": max_flow,
+                        }
+                    )
+
                     payload = {
                         "table": results_df,
                         "chart": chart_path,
                         "warning": None,
                         "solid_table": None,
+                        "inputs_table": inputs_table,
                     }
 
                     store_payload(payload, well_name, target_depth, calculation)
@@ -623,7 +719,7 @@ def render_ui():
                         ax.plot(
                             noz["flow_rates"],
                             noz["pressure_drops"],
-                            color="#d62728",
+                            color="#D62728",
                             linewidth=2.5,
                             label="Nozzle Pressure Drop",
                         )
@@ -635,11 +731,30 @@ def render_ui():
                         chart_path = save_chart(fig, "nozzle.png")
                         st.pyplot(fig)
 
+                        inputs_table = make_inputs_table(
+                            {
+                                "Well Name": well_name,
+                                "Target Depth (m)": target_depth,
+                                "Calculation": calculation,
+                                "Max Flow Rate (bpm)": flow_rate,
+                                "Fluid Density (ppg)": density,
+                                "Discharge Coefficient (Cd)": cd,
+                                "Nozzle Count 1": count_1 or 0,
+                                "Nozzle Diameter 1 (in)": dia_1 or 0,
+                                "Nozzle Count 2": count_2 or 0,
+                                "Nozzle Diameter 2 (in)": dia_2 or 0,
+                                "Nozzle Count 3": count_3 or 0,
+                                "Nozzle Diameter 3 (in)": dia_3 or 0,
+                                "Total Flow Area (in²)": round(noz["TFA_in2"], 4),
+                            }
+                        )
+
                         payload = {
                             "table": results_df,
                             "chart": chart_path,
                             "warning": None,
                             "solid_table": None,
+                            "inputs_table": inputs_table,
                         }
 
                         store_payload(payload, well_name, target_depth, calculation)

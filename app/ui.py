@@ -124,6 +124,24 @@ def validate_required(values):
     return missing
 
 
+def ct_length_is_short(ct_length, target_depth):
+    return (
+        ct_length is not None
+        and target_depth is not None
+        and float(ct_length) < float(target_depth)
+    )
+
+
+def show_ct_length_warning(ct_length, target_depth, unit):
+    if ct_length_is_short(ct_length, target_depth):
+        st.error(
+            f"Total CT Length ({ct_length:,.2f} {unit}) cannot be less than "
+            f"Target Depth ({target_depth:,.2f} {unit})."
+        )
+        return True
+    return False
+
+
 def make_inputs_table(inputs_dict):
     return pd.DataFrame(
         {
@@ -438,6 +456,11 @@ def render_ui():
         else:
             pipe1_total_length = target_depth
         pipe1_total_length_m = length_to_m(pipe1_total_length, length_unit)
+        pipe1_ct_length_short = pipe1_type == "CT" and show_ct_length_warning(
+            pipe1_total_length,
+            target_depth,
+            length_unit,
+        )
 
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
@@ -452,7 +475,7 @@ def render_ui():
             help="Optional limit to flag if friction pressure drop through the smaller pipe becomes excessive."
         )
 
-        if st.button("Run Simulation"):
+        if st.button("Run Simulation", disabled=pipe1_ct_length_short):
             missing = validate_required(
                 {
                     "Target Depth": target_depth,
@@ -716,12 +739,17 @@ def render_ui():
         else:
             total_ct_length = target_depth
         total_ct_length_m = length_to_m(total_ct_length, length_unit)
+        ct_length_short = pipe_type == "CT" and show_ct_length_warning(
+            total_ct_length,
+            target_depth,
+            length_unit,
+        )
 
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
-        if st.button("Run Simulation"):
+        if st.button("Run Simulation", disabled=ct_length_short):
             missing = validate_required(
                 {
                     "Tubing Type": pipe_type,

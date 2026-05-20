@@ -144,9 +144,11 @@ def generate_pdf_report(
         )
     )
 
+    length_unit = job_info.get("length_unit") or "m"
+
     header_data = [
         ["Well Name", job_info.get("well_name") or "-"],
-        ["Target Depth (m)", job_info.get("target_depth") or "-"],
+        [f"Target Depth ({length_unit})", job_info.get("target_depth") or "-"],
         ["Calculation", job_info.get("calculation") or "-"],
         ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M")],
     ]

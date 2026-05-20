@@ -26,6 +26,9 @@ TUBULAR_TABLES = {
     "Casing": CASING_DF,
 }
 
+M_PER_FT = 0.3048
+MIN_ANNULAR_VELOCITY_FT_MIN = 120.0
+
 
 MODULE_DESCRIPTIONS = {
     "Annular Velocity": "Evaluates annular fluid velocity versus flow rate to support solids transport screening.",
@@ -36,13 +39,39 @@ MODULE_DESCRIPTIONS = {
 
 
 def parse_od(od_value):
+    """
+    Convierte OD en string a float (in).
+    Soporta:
+    - 1.050
+    - 1.050 Reg
+    - 2-3/8
+    - 3-1/2
+    """
+
+    if od_value is None:
+        return None
+
+    text = str(od_value).strip()
+
+    # quitar etiquetas tipo "Reg"
+    text = text.replace("Reg", "EUE").strip()
+
+    # intento directo (caso decimal)
     try:
-        return float(od_value)
-    except (ValueError, TypeError):
-        text = str(od_value)
-        whole, frac = text.split("-")
-        num, den = frac.split("/")
-        return float(whole) + float(num) / float(den)
+        return float(text)
+    except:
+        pass
+
+    # caso fracción tipo 2-3/8
+    if "-" in text:
+        try:
+            whole, frac = text.split("-")
+            num, den = frac.split("/")
+            return float(whole) + float(num) / float(den)
+        except:
+            return None
+
+    return None
 
 
 def fmt_int(val):
@@ -63,6 +92,28 @@ def fmt_value(value):
     if value is None or value == "":
         return "-"
     return value
+
+
+def length_to_m(value, unit):
+    if value is None:
+        return None
+    return float(value) * M_PER_FT if unit == "ft" else float(value)
+
+
+def display_velocity_ft_min(value, unit):
+    return float(value) * M_PER_FT if unit == "m" else float(value)
+
+
+def display_velocity_ft_s(value, unit):
+    return float(value) * M_PER_FT if unit == "m" else float(value)
+
+
+def velocity_per_min_label(unit):
+    return "m/min" if unit == "m" else "ft/min"
+
+
+def velocity_per_s_label(unit):
+    return "m/s" if unit == "m" else "ft/s"
 
 
 def validate_required(values):
@@ -119,6 +170,10 @@ def pipe_selector(prefix):
 
     inner_id = get_id(df, od, wt)
     od_numeric = parse_od(od)
+    
+    if od_numeric is None:
+        st.error(f"Invalid OD format: {od}")
+        return pipe_type, od, wt, None, None
 
     return pipe_type, od, wt, od_numeric, inner_id
 
@@ -131,11 +186,12 @@ def save_chart(fig, filename):
     return path
 
 
-def store_payload(payload, well_name, target_depth, calculation):
+def store_payload(payload, well_name, target_depth, length_unit, calculation):
     st.session_state["last_payload"] = payload
     st.session_state["last_job_info"] = {
         "well_name": well_name,
         "target_depth": target_depth,
+        "length_unit": length_unit,
         "calculation": calculation,
     }
     st.session_state["pdf_bytes"] = None
@@ -206,9 +262,21 @@ def render_ui():
         unsafe_allow_html=True,
     )
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns([2, 1, 1])
     well_name = c1.text_input("Well Name")
-    target_depth = c2.number_input("Target Depth (m)", value=None, min_value=0.0)
+    length_unit = c2.selectbox("Length Unit", ["m", "ft"], index=0)
+    target_depth = c3.number_input(
+        f"Target Depth ({length_unit})",
+        value=None,
+        min_value=0.0,
+    )
+    target_depth_m = length_to_m(target_depth, length_unit)
+    velocity_min_unit = velocity_per_min_label(length_unit)
+    velocity_s_unit = velocity_per_s_label(length_unit)
+    min_annular_velocity_display = display_velocity_ft_min(
+        MIN_ANNULAR_VELOCITY_FT_MIN,
+        length_unit,
+    )
 
     st.markdown("---")
 
@@ -267,8 +335,9 @@ def render_ui():
                     results_df = pd.DataFrame(
                         {
                             "Flow Rate (bpm)": [fmt_flow(v) for v in ann["flow_rates"]],
-                            "Annular Velocity (ft/min)": [
-                                fmt_int(v) for v in ann["ann_velocities"]
+                            f"Annular Velocity ({velocity_min_unit})": [
+                                fmt_int(display_velocity_ft_min(v, length_unit))
+                                for v in ann["ann_velocities"]
                             ],
                         }
                     )
@@ -278,20 +347,23 @@ def render_ui():
                     fig, ax = plt.subplots(figsize=(8, 4.5))
                     ax.plot(
                         ann["flow_rates"],
-                        ann["ann_velocities"],
+                        [
+                            display_velocity_ft_min(v, length_unit)
+                            for v in ann["ann_velocities"]
+                        ],
                         color="#008FE3",
                         linewidth=2.5,
                         label="Annular Velocity",
                     )
                     ax.axhline(
-                        120,
+                        min_annular_velocity_display,
                         linestyle="--",
                         color="#F28C00",
                         linewidth=2.5,
                         label="Minimum Recommended Velocity",
                     )
                     ax.set_xlabel("Flow Rate (bpm)")
-                    ax.set_ylabel("Annular Velocity (ft/min)")
+                    ax.set_ylabel(f"Annular Velocity ({velocity_min_unit})")
                     ax.grid(True)
                     ax.legend()
 
@@ -299,9 +371,10 @@ def render_ui():
                     st.pyplot(fig)
 
                     warning = None
-                    if max(ann["ann_velocities"]) < 120:
+                    if max(ann["ann_velocities"]) < MIN_ANNULAR_VELOCITY_FT_MIN:
                         warning = (
-                            "Minimum annular velocity of 120 ft/min was not reached. "
+                            f"Minimum annular velocity of {min_annular_velocity_display:.1f} "
+                            f"{velocity_min_unit} was not reached. "
                             "Higher pump capacity may be required."
                         )
                         st.warning(warning)
@@ -309,7 +382,8 @@ def render_ui():
                     inputs_table = make_inputs_table(
                         {
                             "Well Name": well_name,
-                            "Target Depth (m)": target_depth,
+                            f"Target Depth ({length_unit})": target_depth,
+                            "Length Unit": length_unit,
                             "Calculation": calculation,
                             "Pipe 1 Type": pipe1_type,
                             "Pipe 1 OD": pipe1_od_label,
@@ -331,7 +405,7 @@ def render_ui():
                         "inputs_table": inputs_table,
                     }
 
-                    store_payload(payload, well_name, target_depth, calculation)
+                    store_payload(payload, well_name, target_depth, length_unit, calculation)
 
                 except Exception as e:
                     st.error(f"Calculation error: {e}")
@@ -356,13 +430,14 @@ def render_ui():
         pipe1_total_length = None
         if pipe1_type == "CT":
             pipe1_total_length = st.number_input(
-                "Total CT Length (m)",
+                f"Total CT Length ({length_unit})",
                 value=None,
                 min_value=0.0,
                 help="Total CT length available on reel/string. Used to estimate friction pressure drop through the smaller pipe."
             )
         else:
             pipe1_total_length = target_depth
+        pipe1_total_length_m = length_to_m(pipe1_total_length, length_unit)
 
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
@@ -416,8 +491,8 @@ def render_ui():
                     friction = friction_analysis(
                         tubing_type=pipe1_type,
                         inner_diameter_in=pipe1_id,
-                        target_depth_m=target_depth,
-                        total_ct_length_m=pipe1_total_length,
+                        target_depth_m=target_depth_m,
+                        total_ct_length_m=pipe1_total_length_m,
                         density_ppg=density,
                         viscosity_cp=viscosity,
                         max_flow_bpm=max_flow,
@@ -428,11 +503,13 @@ def render_ui():
                             "Flow Rate (bpm)": [
                                 fmt_flow(v) for v in settle["flow_rates"]
                             ],
-                            "Annular Velocity (ft/min)": [
-                                fmt_int(v) for v in settle["ann_velocity"]
+                            f"Annular Velocity ({velocity_min_unit})": [
+                                fmt_int(display_velocity_ft_min(v, length_unit))
+                                for v in settle["ann_velocity"]
                             ],
-                            "Required Velocity (ft/min)": [
-                                fmt_int(v) for v in settle["required_velocity"]
+                            f"Required Velocity ({velocity_min_unit})": [
+                                fmt_int(display_velocity_ft_min(v, length_unit))
+                                for v in settle["required_velocity"]
                             ],
                             "Friction ΔP - Pipe 1 (psi)": [
                                 fmt_int(v) for v in friction["dp_total"]
@@ -465,12 +542,12 @@ def render_ui():
 
                     c1.metric(
                         "Settling Velocity",
-                        f"{settle['settling_velocity']:.0f} ft/min",
+                        f"{display_velocity_ft_min(settle['settling_velocity'], length_unit):.0f} {velocity_min_unit}",
                     )
                     c2.metric("Target Ratio", f"{settle['ratio']:.1f}")
                     c3.metric(
                         "Required Velocity",
-                        f"{settle['req_velocity']:.0f} ft/min",
+                        f"{display_velocity_ft_min(settle['req_velocity'], length_unit):.0f} {velocity_min_unit}",
                     )
 
                     if settle["min_rate"] is not None:
@@ -492,7 +569,10 @@ def render_ui():
 
                     ax.plot(
                         settle["flow_rates"],
-                        settle["ann_velocity"],
+                        [
+                            display_velocity_ft_min(v, length_unit)
+                            for v in settle["ann_velocity"]
+                        ],
                         color="#008FE3",
                         linewidth=2.5,
                         label="Annular Velocity",
@@ -500,7 +580,10 @@ def render_ui():
 
                     ax.plot(
                         settle["flow_rates"],
-                        settle["required_velocity"],
+                        [
+                            display_velocity_ft_min(v, length_unit)
+                            for v in settle["required_velocity"]
+                        ],
                         linestyle="--",
                         color="#F28C00",
                         linewidth=2.5,
@@ -510,7 +593,7 @@ def render_ui():
                     if settle["min_rate"] is not None:
                         ax.scatter(
                             settle["min_rate"],
-                            settle["req_velocity"],
+                            display_velocity_ft_min(settle["req_velocity"], length_unit),
                             s=130,
                             color="#D62728",
                             edgecolor="black",
@@ -519,7 +602,7 @@ def render_ui():
                         )
 
                     ax.set_xlabel("Flow Rate (bpm)")
-                    ax.set_ylabel("Velocity (ft/min)")
+                    ax.set_ylabel(f"Velocity ({velocity_min_unit})")
                     ax.grid(True)
                     ax.legend()
 
@@ -576,14 +659,15 @@ def render_ui():
                     inputs_table = make_inputs_table(
                         {
                             "Well Name": well_name,
-                            "Target Depth (m)": target_depth,
+                            f"Target Depth ({length_unit})": target_depth,
+                            "Length Unit": length_unit,
                             "Calculation": calculation,
                             "Pipe 1 Type": pipe1_type,
                             "Pipe 1 OD": pipe1_od_label,
                             "Pipe 1 WT / Weight": pipe1_wt,
                             "Pipe 1 OD Numeric (in)": pipe1_od,
                             "Pipe 1 ID (in)": pipe1_id,
-                            "Pipe 1 Total Length (m)": pipe1_total_length,
+                            f"Pipe 1 Total Length ({length_unit})": pipe1_total_length,
                             "Pipe 2 Type": pipe2_type,
                             "Pipe 2 OD": pipe2_od_label,
                             "Pipe 2 WT / Weight": pipe2_wt,
@@ -609,7 +693,7 @@ def render_ui():
                         "inputs_table": inputs_table,
                     }
 
-                    store_payload(payload, well_name, target_depth, calculation)
+                    store_payload(payload, well_name, target_depth, length_unit, calculation)
 
                 except Exception as e:
                     st.error(f"Calculation error: {e}")
@@ -625,12 +709,13 @@ def render_ui():
         total_ct_length = None
         if pipe_type == "CT":
             total_ct_length = st.number_input(
-                "Total CT Length (m)",
+                f"Total CT Length ({length_unit})",
                 value=None,
                 min_value=0.0,
             )
         else:
             total_ct_length = target_depth
+        total_ct_length_m = length_to_m(total_ct_length, length_unit)
 
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
@@ -656,8 +741,8 @@ def render_ui():
                     fric = friction_analysis(
                         tubing_type=pipe_type,
                         inner_diameter_in=pipe_id,
-                        target_depth_m=target_depth,
-                        total_ct_length_m=total_ct_length,
+                        target_depth_m=target_depth_m,
+                        total_ct_length_m=total_ct_length_m,
                         density_ppg=density,
                         viscosity_cp=viscosity,
                         max_flow_bpm=max_flow,
@@ -695,13 +780,14 @@ def render_ui():
                     inputs_table = make_inputs_table(
                         {
                             "Well Name": well_name,
-                            "Target Depth (m)": target_depth,
+                            f"Target Depth ({length_unit})": target_depth,
+                            "Length Unit": length_unit,
                             "Calculation": calculation,
                             "Tubing Type": pipe_type,
                             "Tubing OD": pipe_od_label,
                             "Tubing WT / Weight": pipe_wt,
                             "Tubing ID (in)": pipe_id,
-                            "Total CT Length (m)": total_ct_length,
+                            f"Total CT Length ({length_unit})": total_ct_length,
                             "Fluid Density (ppg)": density,
                             "Fluid Viscosity (cP)": viscosity,
                             "Max Flow Rate (bpm)": max_flow,
@@ -716,7 +802,7 @@ def render_ui():
                         "inputs_table": inputs_table,
                     }
 
-                    store_payload(payload, well_name, target_depth, calculation)
+                    store_payload(payload, well_name, target_depth, length_unit, calculation)
 
                 except Exception as e:
                     st.error(f"Calculation error: {e}")
@@ -804,8 +890,9 @@ def render_ui():
                                 "Nozzle ΔP (psi)": [
                                     fmt_int(v) for v in noz["pressure_drops"]
                                 ],
-                                "Exit Velocity (ft/s)": [
-                                    fmt_int(v) for v in noz["velocities"]
+                                f"Exit Velocity ({velocity_s_unit})": [
+                                    fmt_int(display_velocity_ft_s(v, length_unit))
+                                    for v in noz["velocities"]
                                 ],
                             }
                         )
@@ -832,7 +919,8 @@ def render_ui():
                         inputs_table = make_inputs_table(
                             {
                                 "Well Name": well_name,
-                                "Target Depth (m)": target_depth,
+                                f"Target Depth ({length_unit})": target_depth,
+                                "Length Unit": length_unit,
                                 "Calculation": calculation,
                                 "Max Flow Rate (bpm)": flow_rate,
                                 "Fluid Density (ppg)": density,
@@ -855,7 +943,7 @@ def render_ui():
                             "inputs_table": inputs_table,
                         }
 
-                        store_payload(payload, well_name, target_depth, calculation)
+                        store_payload(payload, well_name, target_depth, length_unit, calculation)
 
                 except Exception as e:
                     st.error(f"Calculation error: {e}")

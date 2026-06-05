@@ -95,6 +95,18 @@ def fmt_value(value):
     return value
 
 
+def parse_positive_float(value):
+    if value is None or str(value).strip() == "":
+        return None
+
+    try:
+        parsed = float(str(value).strip().replace(",", "."))
+    except ValueError:
+        return None
+
+    return parsed if parsed > 0 else None
+
+
 def length_to_m(value, unit):
     if value is None:
         return None
@@ -475,6 +487,7 @@ def render_ui():
         custom_solid_name = None
         custom_particle_size_in = None
         custom_particle_density_gcc = None
+        custom_solid_invalid = False
 
         if solid == CUSTOM_SOLID_OPTION:
             st.markdown("### Manual Solid Properties")
@@ -483,20 +496,26 @@ def render_ui():
                 "Solid Name",
                 value="Custom Solid",
             )
-            custom_particle_size_in = s2.number_input(
+            custom_particle_size_text = s2.text_input(
                 "Particle Size (in)",
-                value=None,
-                min_value=0.0001,
-                step=0.0001,
-                format="%.4f",
+                value="",
+                placeholder="Example: 0.1250",
             )
-            custom_particle_density_gcc = s3.number_input(
+            custom_particle_density_text = s3.text_input(
                 "Particle Density (g/cc)",
-                value=None,
-                min_value=0.001,
-                step=0.001,
-                format="%.3f",
+                value="",
+                placeholder="Example: 7.000",
             )
+            custom_particle_size_in = parse_positive_float(custom_particle_size_text)
+            custom_particle_density_gcc = parse_positive_float(custom_particle_density_text)
+
+            if custom_particle_size_text.strip() and custom_particle_size_in is None:
+                custom_solid_invalid = True
+                s2.error("Enter a positive particle size.")
+
+            if custom_particle_density_text.strip() and custom_particle_density_gcc is None:
+                custom_solid_invalid = True
+                s3.error("Enter a positive particle density.")
 
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
@@ -507,7 +526,10 @@ def render_ui():
             help="Optional limit to flag if friction pressure drop through the smaller pipe becomes excessive."
         )
 
-        if st.button("Run Simulation", disabled=pipe1_ct_length_short):
+        if st.button(
+            "Run Simulation",
+            disabled=pipe1_ct_length_short or custom_solid_invalid,
+        ):
             missing = validate_required(
                 {
                     "Target Depth": target_depth,

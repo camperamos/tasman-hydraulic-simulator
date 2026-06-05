@@ -487,12 +487,14 @@ def render_ui():
                 "Particle Size (in)",
                 value=None,
                 min_value=0.0001,
+                step=0.0001,
                 format="%.4f",
             )
             custom_particle_density_gcc = s3.number_input(
                 "Particle Density (g/cc)",
                 value=None,
                 min_value=0.001,
+                step=0.001,
                 format="%.3f",
             )
 

@@ -28,6 +28,7 @@ TUBULAR_TABLES = {
 
 M_PER_FT = 0.3048
 MIN_ANNULAR_VELOCITY_FT_MIN = 120.0
+CUSTOM_SOLID_OPTION = "Manual / Custom"
 
 
 MODULE_DESCRIPTIONS = {
@@ -465,7 +466,36 @@ def render_ui():
         density = st.number_input("Fluid Density (ppg)", value=None, min_value=0.0)
         viscosity = st.number_input("Fluid Viscosity (cP)", value=None, min_value=0.0)
         deviation = st.number_input("Max Well Deviation (deg)", value=None, min_value=0.0)
-        solid = st.selectbox("Solid Type", list(SOLIDS_TABLE.keys()), index=None)
+        solid = st.selectbox(
+            "Solid Type",
+            list(SOLIDS_TABLE.keys()) + [CUSTOM_SOLID_OPTION],
+            index=None,
+        )
+
+        custom_solid_name = None
+        custom_particle_size_in = None
+        custom_particle_density_gcc = None
+
+        if solid == CUSTOM_SOLID_OPTION:
+            st.markdown("### Manual Solid Properties")
+            s1, s2, s3 = st.columns(3)
+            custom_solid_name = s1.text_input(
+                "Solid Name",
+                value="Custom Solid",
+            )
+            custom_particle_size_in = s2.number_input(
+                "Particle Size (in)",
+                value=None,
+                min_value=0.0001,
+                format="%.4f",
+            )
+            custom_particle_density_gcc = s3.number_input(
+                "Particle Density (g/cc)",
+                value=None,
+                min_value=0.001,
+                format="%.3f",
+            )
+
         max_flow = st.number_input("Max Flow Rate (bpm)", value=None, min_value=0.0)
 
         pressure_limit = st.number_input(
@@ -487,6 +517,12 @@ def render_ui():
                     "Fluid Viscosity": viscosity,
                     "Max Well Deviation": deviation,
                     "Solid Type": solid,
+                    "Particle Size": custom_particle_size_in
+                    if solid == CUSTOM_SOLID_OPTION
+                    else 1,
+                    "Particle Density": custom_particle_density_gcc
+                    if solid == CUSTOM_SOLID_OPTION
+                    else 1,
                     "Max Flow Rate": max_flow,
                 }
             )
@@ -502,13 +538,21 @@ def render_ui():
                             "Invalid annular geometry. Pipe 2 ID must be greater than Pipe 1 OD."
                         )
 
+                    selected_solid = (
+                        custom_solid_name.strip() or "Custom Solid"
+                        if solid == CUSTOM_SOLID_OPTION
+                        else solid
+                    )
+
                     settle = settling_velocity_analysis(
                         ann_area_in2=ann_area,
                         density_ppg=density,
                         viscosity_cp=viscosity,
                         max_flow_bpm=max_flow,
-                        solid_type=solid,
+                        solid_type=selected_solid,
                         deviation_deg=deviation,
+                        particle_size_in=custom_particle_size_in,
+                        particle_density_gcc=custom_particle_density_gcc,
                     )
 
                     friction = friction_analysis(
@@ -699,7 +743,7 @@ def render_ui():
                             "Fluid Density (ppg)": density,
                             "Fluid Viscosity (cP)": viscosity,
                             "Max Well Deviation (deg)": deviation,
-                            "Solid Type": solid,
+                            "Solid Type": selected_solid,
                             "Particle Size (in)": solid_props["Particle Size (in)"],
                             "Particle Density (g/cc)": solid_props["Particle Density (g/cc)"],
                             "Max Flow Rate (bpm)": max_flow,

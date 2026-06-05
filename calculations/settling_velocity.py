@@ -30,6 +30,8 @@ def settling_velocity_analysis(
     max_flow_bpm,
     solid_type,
     deviation_deg,
+    particle_size_in=None,
+    particle_density_gcc=None,
     step=0.5
 ):
     g = 32.174
@@ -37,7 +39,15 @@ def settling_velocity_analysis(
     rho_f = density_ppg * 7.48052
     mu = viscosity_cp * 0.00067197
 
-    solid = SOLIDS_TABLE[solid_type]
+    if solid_type in SOLIDS_TABLE:
+        solid = SOLIDS_TABLE[solid_type]
+    else:
+        if particle_size_in is None or particle_density_gcc is None:
+            raise ValueError("Custom solid requires particle size and density.")
+        if particle_size_in <= 0 or particle_density_gcc <= 0:
+            raise ValueError("Custom particle size and density must be greater than zero.")
+        solid = {"size_in": particle_size_in, "density_gcc": particle_density_gcc}
+
     d_ft = solid["size_in"] / 12.0
     rho_p = solid["density_gcc"] * 62.42796
 
